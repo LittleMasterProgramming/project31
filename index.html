@@ -1,0 +1,2374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>National Health Resource Optimizer</title>
+  <meta name="description" content="Real-time command map, resource inventory, AI surge forecasting, and automated triage dispatch for regional medical facilities." />
+  <meta property="og:title" content="National Health Resource Optimizer" />
+  <meta property="og:description" content="Real-time command map, resource inventory, AI surge forecasting, and automated triage dispatch for regional medical facilities." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- Fonts: Plus Jakarta Sans for UI, JetBrains Mono for Tabular Numerals -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+              900: '#0c4a6e',
+            },
+            status: {
+              critical: '#ef4444',
+              warning: '#f59e0b',
+              nominal: '#10b981',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Leaflet MarkerCluster CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    /* Tabular numeric alignment */
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+    
+    /* Radar pulsing ring for critical Leaflet markers (< 20% capacity) */
+    @keyframes pulse-ring {
+      0% {
+        transform: scale(0.6);
+        opacity: 0.9;
+      }
+      100% {
+        transform: scale(2.6);
+        opacity: 0;
+      }
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.15);
+      }
+    }
+
+    .critical-pin-wrapper {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .critical-pin-radar {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border-radius: 9999px;
+      background-color: rgba(239, 68, 68, 0.45);
+      animation: pulse-ring 1.8s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+      pointer-events: none;
+    }
+
+    .critical-pin-radar-delayed {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      border-radius: 9999px;
+      background-color: rgba(239, 68, 68, 0.3);
+      animation: pulse-ring 1.8s cubic-bezier(0.24, 0, 0.38, 1) 0.6s infinite;
+      pointer-events: none;
+    }
+
+    .custom-marker-node {
+      position: relative;
+      width: 26px;
+      height: 26px;
+      border-radius: 9999px;
+      border: 2px solid #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+
+    .custom-marker-node:hover {
+      transform: scale(1.2);
+    }
+
+    .node-critical {
+      background-color: #ef4444;
+      animation: pulse-dot 1.2s ease-in-out infinite;
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.85);
+    }
+
+    .node-warning {
+      background-color: #f59e0b;
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+    }
+
+    .node-nominal {
+      background-color: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+    }
+
+    /* Custom Leaflet Popup */
+    .leaflet-popup-content-wrapper {
+      padding: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
+      border: 1px solid #e2e8f0;
+    }
+    .leaflet-popup-content {
+      margin: 0;
+      line-height: 1.4;
+    }
+    .leaflet-popup-tip {
+      background: #ffffff;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen flex flex-col selection:bg-sky-500 selection:text-white">
+
+  <!-- TOP ALERT BANNER (Dynamic & Animated) -->
+  <aside id="topAlertBanner" class="bg-amber-500 text-white transition-all duration-300 relative border-b border-amber-600/30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between text-xs sm:text-sm font-medium">
+      <div class="flex items-center gap-2.5 overflow-hidden">
+        <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 text-white animate-bounce"></i>
+        <span id="alertCountBadge" class="bg-amber-700/80 px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase shrink-0">Priority Alert</span>
+        <div id="alertBannerText" class="truncate font-medium">
+          Monitoring 18 national & strategic regional facilities. Real-time telemetry synchronized.
+        </div>
+      </div>
+      <div class="flex items-center gap-4 shrink-0 pl-2">
+        <button id="viewAlertSourceBtn" onclick="app.showCriticalFacilities()" class="hidden sm:inline-flex items-center gap-1 underline hover:text-amber-100 text-xs font-semibold whitespace-nowrap">
+          Filter Critical Facilities
+        </button>
+        <button onclick="app.toggleAlertBanner()" class="text-white/80 hover:text-white p-1 rounded hover:bg-black/10 transition-colors" title="Dismiss Banner">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- TOP NAVIGATION BAR (Strict 3-Zone Contract) -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
+      
+      <!-- Zone 1: Single text element wordmark -->
+      <div class="flex items-center gap-3 shrink-0">
+        <div class="w-9 h-9 rounded-lg bg-sky-600 text-white flex items-center justify-center shadow-sm">
+          <i data-lucide="crosshair" class="w-5 h-5"></i>
+        </div>
+        <a href="/" class="text-base sm:text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">
+          National Health Resource Optimizer
+        </a>
+      </div>
+
+      <!-- Zone 2: 4 Clean Single-Line Text Links / View Indicators -->
+      <nav class="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
+        <button onclick="app.switchView('map')" id="nav-map" class="nav-item hover:text-sky-700 transition-colors whitespace-nowrap py-1 text-sky-700 font-semibold border-b-2 border-sky-600">
+          Command Map
+        </button>
+        <button onclick="app.switchView('inventory')" id="nav-inventory" class="nav-item hover:text-sky-700 transition-colors whitespace-nowrap py-1 text-slate-600 border-b-2 border-transparent">
+          Resource Inventory
+        </button>
+        <button onclick="app.switchView('predictor')" id="nav-predictor" class="nav-item hover:text-sky-700 transition-colors whitespace-nowrap py-1 text-slate-600 border-b-2 border-transparent">
+          AI Forecaster
+        </button>
+        <button onclick="app.switchView('dispatch')" id="nav-dispatch" class="nav-item hover:text-sky-700 transition-colors whitespace-nowrap py-1 text-slate-600 border-b-2 border-transparent flex items-center gap-1.5">
+          <span>Triage & Dispatch</span>
+          <span id="dispatchCountTag" class="text-[11px] font-mono px-1.5 py-0.2 bg-slate-100 rounded text-slate-700">3 active</span>
+        </button>
+      </nav>
+
+      <!-- Zone 3: Primary Action (Interactive Simulation Toggle & Audio Mute) -->
+      <div class="flex items-center gap-3 shrink-0">
+        <!-- Sound alert mute toggle -->
+        <button id="soundToggleBtn" onclick="app.toggleSound()" class="p-2 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors" title="Toggle Alert Chime">
+          <i data-lucide="volume-2" id="soundIcon" class="w-4 h-4"></i>
+        </button>
+
+        <!-- Simulation Toggle Button -->
+        <button id="simToggleBtn" onclick="app.toggleSimulation()" class="px-3.5 py-2 text-xs sm:text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-all shadow-sm flex items-center gap-2 whitespace-nowrap cursor-pointer">
+          <i data-lucide="play" id="simIcon" class="w-4 h-4 text-emerald-400"></i>
+          <span id="simBtnText">Start Real-Time Monitoring</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- MAIN BODY LAYOUT -->
+  <div class="flex-1 flex max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 gap-6 overflow-hidden">
+    
+    <!-- SIDEBAR NAVIGATION MENU & LIVE TELEMETRY SNAPSHOT -->
+    <aside class="w-64 shrink-0 hidden lg:flex flex-col gap-6">
+      
+      <!-- View Navigation Selector -->
+      <div class="bg-white rounded-xl border border-slate-200 p-2 shadow-xs space-y-1">
+        <div class="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          Operational Views
+        </div>
+        <button onclick="app.switchView('map')" id="side-nav-map" class="side-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold bg-sky-50 text-sky-700 transition-colors">
+          <i data-lucide="map-pin" class="w-4 h-4 text-sky-600"></i>
+          <span class="flex-1 text-left">Live Command Map</span>
+          <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+        </button>
+        <button onclick="app.switchView('inventory')" id="side-nav-inventory" class="side-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+          <i data-lucide="database" class="w-4 h-4 text-slate-500"></i>
+          <span class="flex-1 text-left">Resource Inventory</span>
+          <span id="sideCriticalCount" class="text-xs font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">0 critical</span>
+        </button>
+        <button onclick="app.switchView('predictor')" id="side-nav-predictor" class="side-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+          <i data-lucide="trending-up" class="w-4 h-4 text-slate-500"></i>
+          <span class="flex-1 text-left">AI Surge Forecaster</span>
+        </button>
+        <button onclick="app.switchView('dispatch')" id="side-nav-dispatch" class="side-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors">
+          <i data-lucide="truck" class="w-4 h-4 text-slate-500"></i>
+          <span class="flex-1 text-left">Triage & Dispatch</span>
+          <span id="sideDispatchBadge" class="text-xs font-mono font-bold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded">3</span>
+        </button>
+      </div>
+
+      <!-- Quick KPI Strip -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-500">National Reserves</span>
+          <span class="text-[11px] font-mono text-slate-400 tabular-nums" id="telemetryTimestamp">10:45:00 BST</span>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-slate-600">Avg ICU Availability</span>
+            <span id="kpiAvgIcu" class="font-mono font-bold text-slate-900 tabular-nums">42.8%</span>
+          </div>
+          <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+            <div id="kpiAvgIcuBar" class="bg-sky-500 h-full rounded-full transition-all duration-500" style="width: 42.8%;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-slate-600">Total Liquid Oxygen</span>
+            <span id="kpiOxygenLevel" class="font-mono font-bold text-slate-900 tabular-nums">64.5%</span>
+          </div>
+          <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+            <div id="kpiOxygenBar" class="bg-teal-500 h-full rounded-full transition-all duration-500" style="width: 64.5%;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-slate-600">ICU Specialist Physicians</span>
+            <span id="kpiStaffOnDuty" class="font-mono font-bold text-slate-900 tabular-nums">482 on duty</span>
+          </div>
+          <div class="text-[11px] text-slate-500">
+            Network Staffing Ratio: <span class="font-mono font-semibold text-slate-700">1:2.4 beds</span>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+          <span class="text-slate-500">Critical Threshold</span>
+          <span class="font-mono font-bold text-red-600">&lt; 20% Capacity</span>
+        </div>
+      </div>
+
+      <!-- Quick Stress Test Tool -->
+      <div class="bg-slate-900 text-white rounded-xl p-4 shadow-sm space-y-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-200">Simulation Controls</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Trigger simulated regional surge to observe automated triage reallocations.
+        </p>
+        <div class="flex flex-col gap-2">
+          <button onclick="app.triggerSurgeEvent('dhaka')" class="w-full py-1.5 px-2.5 text-xs font-semibold bg-red-600/90 hover:bg-red-600 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer">
+            <i data-lucide="alert-octagon" class="w-3.5 h-3.5"></i>
+            <span>Simulate Dhaka Surge (&lt;20%)</span>
+          </button>
+          <button onclick="app.triggerSurgeEvent('chittagong')" class="w-full py-1.5 px-2.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer">
+            <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+            <span>Simulate Chittagong Strain</span>
+          </button>
+          <button onclick="app.resetData()" class="w-full py-1.5 px-2.5 text-xs font-medium text-slate-400 hover:text-white rounded hover:bg-slate-800/60 transition-colors">
+            Reset All Baseline Numbers
+          </button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- CONTENT VIEW CONTAINER -->
+    <main class="flex-1 flex flex-col min-w-0">
+
+      <!-- ========================================== -->
+      <!-- VIEW 1: LIVE COMMAND MAP -->
+      <!-- ========================================== -->
+      <section id="view-map" class="view-panel flex-1 flex flex-col gap-4">
+        
+        <!-- Map Control Header & Filter Bar -->
+        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold text-slate-600 uppercase tracking-wider">Facility Filter:</span>
+            <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+              <button onclick="app.setMapFilter('all')" id="map-filter-all" class="px-2.5 py-1 text-xs font-semibold rounded bg-white text-slate-900 shadow-xs">
+                All (18)
+              </button>
+              <button onclick="app.setMapFilter('critical')" id="map-filter-critical" class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:text-slate-900">
+                Critical &lt;20%
+              </button>
+              <button onclick="app.setMapFilter('strained')" id="map-filter-strained" class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:text-slate-900">
+                Strained (20-50%)
+              </button>
+              <button onclick="app.setMapFilter('nominal')" id="map-filter-nominal" class="px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:text-slate-900">
+                Nominal &gt;50%
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Geographic Jumps -->
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-slate-400">Camera Focus:</span>
+            <button onclick="app.flyToLocation([23.8103, 90.4125], 7)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded font-medium text-slate-700 transition-colors">
+              Bangladesh
+            </button>
+            <button onclick="app.flyToLocation([23.7257, 90.3976], 12)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded font-medium text-slate-700 transition-colors">
+              Dhaka Metro
+            </button>
+            <button onclick="app.flyToLocation([13.7563, 100.5018], 5)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded font-medium text-slate-700 transition-colors">
+              International Hubs
+            </button>
+          </div>
+        </div>
+
+        <!-- Map Canvas & Interactive Inspector Grid -->
+        <div class="flex-1 grid grid-cols-1 xl:grid-cols-4 gap-4 min-h-[580px]">
+          
+          <!-- Leaflet Map Container -->
+          <div class="xl:col-span-3 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden relative flex flex-col">
+            <div id="map" style="height: 600px; min-height: 500px; width: 100%; display: block; position: relative;" class="z-10"></div>
+
+            <!-- Legend Overlay -->
+            <div class="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-lg p-2.5 shadow-md text-xs space-y-1.5 pointer-events-auto">
+              <div class="font-bold text-slate-700 text-[11px] uppercase tracking-wider mb-1">Status Legend</div>
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-red-500 shadow-xs animate-pulse"></span>
+                <span class="text-slate-700">Critical (&lt; 20% ICU/O₂)</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+                <span class="text-slate-700">Strained (20% – 50%)</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                <span class="text-slate-700">Nominal / Surplus (&gt; 50%)</span>
+              </div>
+            </div>
+
+            <!-- Live Cluster Indicator -->
+            <div class="absolute top-4 right-4 z-20 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-lg px-3 py-1.5 shadow-md text-xs flex items-center gap-2 font-mono tabular-nums">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span id="mapLiveStatusText">Clusters Active: Leaflet v1.9.4</span>
+            </div>
+          </div>
+
+          <!-- Selected Facility Inspector Drawer -->
+          <div id="facilityInspector" class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs flex flex-col justify-between overflow-y-auto">
+            <div class="space-y-4">
+              <div class="border-b border-slate-100 pb-3">
+                <div class="flex items-center justify-between">
+                  <span id="inspTypeTag" class="text-[11px] font-bold text-sky-700 uppercase tracking-wide">National Tertiary</span>
+                  <span id="inspStatusBadge" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">Nominal</span>
+                </div>
+                <h3 id="inspFacilityName" class="text-base font-bold text-slate-900 mt-1">Dhaka Medical College Hospital</h3>
+                <div id="inspLocation" class="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                  <i data-lucide="map-pin" class="w-3 h-3 text-slate-400"></i>
+                  <span>Dhaka, Bangladesh</span>
+                </div>
+              </div>
+
+              <!-- Metric Gauges -->
+              <div class="space-y-3">
+                <div>
+                  <div class="flex items-center justify-between text-xs mb-1">
+                    <span class="font-medium text-slate-600">ICU Bed Availability</span>
+                    <span id="inspIcuVal" class="font-mono font-bold text-slate-900 tabular-nums">18 / 110 (16.4%)</span>
+                  </div>
+                  <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div id="inspIcuBar" class="bg-red-500 h-full rounded-full transition-all" style="width: 16.4%;"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="flex items-center justify-between text-xs mb-1">
+                    <span class="font-medium text-slate-600">Liquid Oxygen Tank</span>
+                    <span id="inspOxygenVal" class="font-mono font-bold text-slate-900 tabular-nums">19.2% (11.5h left)</span>
+                  </div>
+                  <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div id="inspOxygenBar" class="bg-red-500 h-full rounded-full transition-all" style="width: 19.2%;"></div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs pt-1">
+                  <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    <div class="text-slate-400 text-[10px] uppercase font-bold">Staff On Duty</div>
+                    <div id="inspStaffVal" class="font-mono font-bold text-slate-800 text-sm mt-0.5 tabular-nums">28 Docs / 64 Nurses</div>
+                  </div>
+                  <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    <div class="text-slate-400 text-[10px] uppercase font-bold">Ventilators Free</div>
+                    <div id="inspVentVal" class="font-mono font-bold text-slate-800 text-sm mt-0.5 tabular-nums">4 Free / 32 In-Use</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Diagnostic Tools Checklist -->
+              <div class="space-y-1.5 text-xs">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Diagnostics Status</span>
+                <div class="flex items-center justify-between py-1 border-b border-slate-50">
+                  <span class="text-slate-600">CT Scanner Multi-Slice</span>
+                  <span id="inspCtStatus" class="font-mono text-emerald-600 font-semibold">Operational (2/2)</span>
+                </div>
+                <div class="flex items-center justify-between py-1 border-b border-slate-50">
+                  <span class="text-slate-600">Blood Gas Analyzer</span>
+                  <span id="inspAbgStatus" class="font-mono text-emerald-600 font-semibold">Online (4/4)</span>
+                </div>
+                <div class="flex items-center justify-between py-1">
+                  <span class="text-slate-600">Mobile X-Ray Units</span>
+                  <span id="inspXrayStatus" class="font-mono text-slate-700 font-semibold">3 Active</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="pt-4 border-t border-slate-100 space-y-2">
+              <button id="inspDispatchBtn" onclick="app.dispatchToSelectedFacility()" class="w-full py-2 px-3 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                <span>Queue Emergency Supply Requisition</span>
+              </button>
+              <button onclick="app.switchView('predictor')" class="w-full py-2 px-3 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors text-center">
+                Analyze 72h AI Surge Projection
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- ========================================== -->
+      <!-- VIEW 2: RESOURCE INVENTORY TABLE -->
+      <!-- ========================================== -->
+      <section id="view-inventory" class="view-panel hidden flex-1 flex-col gap-4">
+        
+        <!-- Inventory Filter & Action Bar -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          <div class="flex items-center gap-2 flex-1">
+            <div class="relative flex-1 max-w-sm">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+              <input type="text" id="inventorySearchInput" oninput="app.renderInventoryTable()" placeholder="Search facility, division, or city..." class="w-full pl-9 pr-3 py-1.5 text-xs sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500" />
+            </div>
+            
+            <select id="inventoryRegionFilter" onchange="app.renderInventoryTable()" class="text-xs sm:text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500">
+              <option value="all">All Divisions & Hubs</option>
+              <option value="Dhaka">Dhaka Division</option>
+              <option value="Chittagong">Chittagong Division</option>
+              <option value="Sylhet">Sylhet Division</option>
+              <option value="Rajshahi">Rajshahi Division</option>
+              <option value="Khulna">Khulna Division</option>
+              <option value="Barisal">Barisal Division</option>
+              <option value="International">International Referral Hubs</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button onclick="app.openReallocateModal()" class="px-3 py-2 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer">
+              <i data-lucide="repeat" class="w-3.5 h-3.5"></i>
+              <span>Manual Reallocation Transfer</span>
+            </button>
+            <button onclick="app.exportInventoryCsv()" class="px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1.5">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- High-Density Data Grid -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex-1 flex flex-col">
+          <div class="overflow-x-auto flex-1">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[11px]">
+                <tr>
+                  <th class="py-3 px-4">Medical Facility</th>
+                  <th class="py-3 px-4">Region / Division</th>
+                  <th class="py-3 px-4">ICU Bed Availability</th>
+                  <th class="py-3 px-4">Liquid Oxygen Tank</th>
+                  <th class="py-3 px-4">Medical Staff</th>
+                  <th class="py-3 px-4">Ventilators</th>
+                  <th class="py-3 px-4">Status</th>
+                  <th class="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTableBody" class="divide-y divide-slate-100 tabular-nums">
+                <!-- Dynamically generated rows -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Table Footer Summary -->
+          <div class="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-mono">
+            <span id="inventoryRowCount">Showing 18 facilities</span>
+            <div class="flex items-center gap-4">
+              <span>Threshold Rule: <strong class="text-red-600 font-bold">&lt; 20% = Critical</strong></span>
+              <span>Updated: Real-time telemetry sync</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ========================================== -->
+      <!-- VIEW 3: AI PREDICTOR & FORECASTER -->
+      <!-- ========================================== -->
+      <section id="view-predictor" class="view-panel hidden flex-1 flex-col gap-4">
+        
+        <!-- Scenario Simulation Control Header -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <i data-lucide="brain-circuit" class="w-4 h-4 text-sky-600"></i>
+                <span>National Predictive Surge & Supply Depletion Engine</span>
+              </h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Machine learning model projecting 72-hour ICU bed stress, liquid oxygen depletion vectors, and viral outbreak trends.
+              </p>
+            </div>
+
+            <!-- Scenario Adjusters -->
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs">
+                <span class="text-slate-600 font-medium">Surge Outbreak Factor:</span>
+                <input type="range" id="surgeFactorSlider" min="0" max="100" value="35" oninput="app.updateForecastScenario(this.value)" class="w-24 accent-sky-600 cursor-pointer">
+                <span id="surgeFactorLabel" class="font-mono font-bold text-sky-700 tabular-nums">+35%</span>
+              </div>
+
+              <button onclick="app.recalculateAIPredictions()" class="px-3 py-1.5 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span>Recalculate Projections</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 Charts Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
+          
+          <!-- Chart 1: 72-Hour ICU Demand Surge -->
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">72h National ICU Demand vs Capacity</h3>
+                <span class="text-[11px] text-slate-500">Predicted admission volume with 95% confidence ceiling</span>
+              </div>
+              <span class="text-xs font-mono font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded">Risk Window: +36h</span>
+            </div>
+            <div class="flex-1 relative min-h-[240px]">
+              <canvas id="icuSurgeChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Chart 2: Regional Oxygen Depletion Timeline -->
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Liquid Oxygen Tank Run-Rate (Hours Left)</h3>
+                <span class="text-[11px] text-slate-500">Estimated depletion timeframe by regional cluster</span>
+              </div>
+              <span class="text-xs font-mono font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Safety Minimum: 24h</span>
+            </div>
+            <div class="flex-1 relative min-h-[240px]">
+              <canvas id="oxygenDepletionChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Chart 3: Disease & Inflow Vector -->
+          <div class="lg:col-span-2 bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Epidemic & Trauma Inflow Vector Decomposition</h3>
+                <span class="text-[11px] text-slate-500">Proportional driver of tertiary intensive care admissions</span>
+              </div>
+              <div class="flex items-center gap-3 text-xs font-mono">
+                <span class="text-sky-700">Dengue Shock: 42%</span>
+                <span class="text-emerald-700">Acute Respiratory (ARDS): 31%</span>
+                <span class="text-amber-700">Cardiac & Trauma: 27%</span>
+              </div>
+            </div>
+            <div class="flex-1 relative min-h-[200px]">
+              <canvas id="vectorDecompChart"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- ========================================== -->
+      <!-- VIEW 4: AUTOMATED TRIAGE & DISPATCH -->
+      <!-- ========================================== -->
+      <section id="view-dispatch" class="view-panel hidden flex-1 flex-col gap-4">
+        
+        <!-- Header summary -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <i data-lucide="shield-alert" class="w-4 h-4 text-sky-600"></i>
+              <span>Automated Resource Balancing & Medevac Dispatch</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Algorithm matches deficit hospitals (&lt; 20% capacity) with neighboring surplus hubs to initiate relief convoys and patient transfers.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button onclick="app.generateAutomatedRecommendations()" class="px-3 py-1.5 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer">
+              <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+              <span>Re-evaluate Triage Recommendations</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Triage Queue & Active Convoys Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1">
+          
+          <!-- Column 1 & 2: Pending Recommended Reallocations -->
+          <div class="lg:col-span-2 space-y-3 flex flex-col">
+            <div class="flex items-center justify-between px-1">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-600">Generated Transfer Recommendations</span>
+              <span id="pendingTransferCount" class="text-xs font-mono text-slate-500">3 recommendations queued</span>
+            </div>
+
+            <!-- List of Transfer Requisitions -->
+            <div id="transferRequisitionList" class="space-y-3 flex-1 overflow-y-auto">
+              <!-- Dynamically populated cards -->
+            </div>
+          </div>
+
+          <!-- Column 3: Active In-Transit Convoys & Medevac Logs -->
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div class="flex items-center gap-2">
+                <i data-lucide="navigation" class="w-4 h-4 text-sky-600"></i>
+                <span class="text-xs font-bold uppercase tracking-wider text-slate-700">Active Convoys (In-Transit)</span>
+              </div>
+              <span id="activeTransitCount" class="text-xs font-mono font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded">2 En-Route</span>
+            </div>
+
+            <!-- Active Convoys List -->
+            <div id="activeConvoysList" class="space-y-3 flex-1 overflow-y-auto">
+              <!-- Dynamically injected active convoys with progress bars -->
+            </div>
+
+            <!-- Quick Dispatch Medevac Flight Manifest -->
+            <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs space-y-2">
+              <div class="font-bold text-slate-800 flex items-center justify-between">
+                <span>International Airlift Protocol</span>
+                <span class="text-[10px] font-mono bg-slate-200 text-slate-700 px-1.5 rounded">STANDBY</span>
+              </div>
+              <p class="text-[11px] text-slate-500">
+                Direct charter linkage active between Dhaka Medical and Bumrungrad / Singapore General for ECMO critical cases.
+              </p>
+              <button onclick="app.requestInternationalAirlift()" class="w-full py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded transition-colors flex items-center justify-center gap-1 cursor-pointer">
+                <i data-lucide="plane-takeoff" class="w-3.5 h-3.5"></i>
+                <span>Request Air Ambulance Clearance</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- REALLOCATION MODAL DIALOG -->
+  <div id="reallocateModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center">
+            <i data-lucide="repeat" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-900">Manual Resource Reallocation</h3>
+            <p class="text-xs text-slate-500">Transfer emergency supplies between designated facilities</p>
+          </div>
+        </div>
+        <button onclick="app.closeReallocateModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Source Hospital (Surplus Donor):</label>
+          <select id="modalSourceSelect" class="w-full border border-slate-200 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-sky-500">
+            <!-- options -->
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Destination Hospital (Deficit Recipient):</label>
+          <select id="modalDestSelect" class="w-full border border-slate-200 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-sky-500">
+            <!-- options -->
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Resource Commodity:</label>
+            <select id="modalCommoditySelect" class="w-full border border-slate-200 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-sky-500">
+              <option value="oxygen">Liquid Medical Oxygen (LMO Liters)</option>
+              <option value="icu">Portable ICU Bed / Vent Units</option>
+              <option value="staff">Emergency ICU Nurse Strike Team</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Quantity / Units:</label>
+            <input type="number" id="modalQuantityInput" value="2500" min="1" max="10000" class="w-full border border-slate-200 rounded-lg p-2 text-slate-800 tabular-nums font-mono" />
+          </div>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-800">
+          <div class="flex items-center gap-1.5 font-bold mb-0.5">
+            <i data-lucide="info" class="w-3.5 h-3.5 text-amber-600"></i>
+            <span>Fleet Escort Notice</span>
+          </div>
+          <span>Highway emergency corridor priority will be automatically logged with Bangladesh Highway Police dispatch.</span>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+        <button onclick="app.closeReallocateModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+          Cancel
+        </button>
+        <button onclick="app.executeManualReallocation()" class="px-4 py-2 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-colors shadow-xs">
+          Dispatch Transport Convoy
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- APPLICATION JAVASCRIPT LOGIC -->
+  <script>
+    /**
+     * NATIONAL HEALTH RESOURCE OPTIMIZER
+     * Production-ready interactive single-file architecture
+     */
+    
+    // Seed Facilities Data (Bangladesh Anchor Hospitals + Regional Tertiary + Strategic International Hubs)
+    const initialFacilities = [
+      {
+        id: 'dmch',
+        name: 'Dhaka Medical College Hospital',
+        division: 'Dhaka',
+        country: 'Bangladesh',
+        lat: 23.7257,
+        lng: 90.3976,
+        type: 'National Apex Tertiary',
+        icuTotal: 120,
+        icuAvailable: 19, // 15.8% (Critical < 20%)
+        oxygenTankPercent: 18.5, // 18.5% (Critical < 20%)
+        oxygenHoursLeft: 11.2,
+        staffDocs: 34,
+        staffNurses: 82,
+        ventilatorsTotal: 40,
+        ventilatorsFree: 3,
+        ctOperational: '2 / 2',
+        abgOperational: '4 / 4',
+      },
+      {
+        id: 'bsmmu',
+        name: 'Bangabandhu Sheikh Mujib Medical University',
+        division: 'Dhaka',
+        country: 'Bangladesh',
+        lat: 23.7397,
+        lng: 90.3957,
+        type: 'Autonomous University Hospital',
+        icuTotal: 90,
+        icuAvailable: 34, // 37.7% (Strained)
+        oxygenTankPercent: 58.0,
+        oxygenHoursLeft: 44.0,
+        staffDocs: 42,
+        staffNurses: 96,
+        ventilatorsTotal: 35,
+        ventilatorsFree: 11,
+        ctOperational: '3 / 3',
+        abgOperational: '5 / 5',
+      },
+      {
+        id: 'kurmitola',
+        name: 'Kurmitola General Hospital',
+        division: 'Dhaka',
+        country: 'Bangladesh',
+        lat: 23.8242,
+        lng: 90.4137,
+        type: 'Public Specialized',
+        icuTotal: 45,
+        icuAvailable: 29, // 64.4% (Nominal Surplus)
+        oxygenTankPercent: 78.0,
+        oxygenHoursLeft: 68.5,
+        staffDocs: 20,
+        staffNurses: 52,
+        ventilatorsTotal: 20,
+        ventilatorsFree: 12,
+        ctOperational: '1 / 1',
+        abgOperational: '2 / 2',
+      },
+      {
+        id: 'nidch',
+        name: 'National Institute of Diseases of the Chest (NIDCH)',
+        division: 'Dhaka',
+        country: 'Bangladesh',
+        lat: 23.7783,
+        lng: 90.4034,
+        type: 'Specialized Pulmonology',
+        icuTotal: 50,
+        icuAvailable: 8, // 16% (Critical)
+        oxygenTankPercent: 21.0,
+        oxygenHoursLeft: 14.8,
+        staffDocs: 24,
+        staffNurses: 48,
+        ventilatorsTotal: 25,
+        ventilatorsFree: 2,
+        ctOperational: '1 / 1',
+        abgOperational: '3 / 3',
+      },
+      {
+        id: 'cmch',
+        name: 'Chittagong Medical College Hospital',
+        division: 'Chittagong',
+        country: 'Bangladesh',
+        lat: 22.3592,
+        lng: 91.8286,
+        type: 'Regional Apex Tertiary',
+        icuTotal: 80,
+        icuAvailable: 14, // 17.5% (Critical < 20%)
+        oxygenTankPercent: 19.8,
+        oxygenHoursLeft: 12.0,
+        staffDocs: 28,
+        staffNurses: 66,
+        ventilatorsTotal: 30,
+        ventilatorsFree: 4,
+        ctOperational: '2 / 2',
+        abgOperational: '3 / 3',
+      },
+      {
+        id: 'cmch_general',
+        name: 'Chittagong General Hospital',
+        division: 'Chittagong',
+        country: 'Bangladesh',
+        lat: 22.3385,
+        lng: 91.8340,
+        type: 'District Referral',
+        icuTotal: 35,
+        icuAvailable: 18, // 51.4% (Nominal)
+        oxygenTankPercent: 62.0,
+        oxygenHoursLeft: 52.0,
+        staffDocs: 16,
+        staffNurses: 38,
+        ventilatorsTotal: 15,
+        ventilatorsFree: 7,
+        ctOperational: '1 / 1',
+        abgOperational: '2 / 2',
+      },
+      {
+        id: 'mag_osmani',
+        name: 'Sylhet MAG Osmani Medical College Hospital',
+        division: 'Sylhet',
+        country: 'Bangladesh',
+        lat: 24.8993,
+        lng: 91.8597,
+        type: 'Divisional Apex Hospital',
+        icuTotal: 60,
+        icuAvailable: 26, // 43.3% (Strained)
+        oxygenTankPercent: 66.0,
+        oxygenHoursLeft: 56.4,
+        staffDocs: 22,
+        staffNurses: 54,
+        ventilatorsTotal: 24,
+        ventilatorsFree: 10,
+        ctOperational: '2 / 2',
+        abgOperational: '3 / 3',
+      },
+      {
+        id: 'rmch',
+        name: 'Rajshahi Medical College Hospital',
+        division: 'Rajshahi',
+        country: 'Bangladesh',
+        lat: 24.3705,
+        lng: 88.5834,
+        type: 'Divisional Apex Hospital',
+        icuTotal: 65,
+        icuAvailable: 31, // 47.6% (Strained)
+        oxygenTankPercent: 71.0,
+        oxygenHoursLeft: 62.0,
+        staffDocs: 26,
+        staffNurses: 60,
+        ventilatorsTotal: 28,
+        ventilatorsFree: 13,
+        ctOperational: '2 / 2',
+        abgOperational: '3 / 3',
+      },
+      {
+        id: 'kmch',
+        name: 'Khulna Medical College Hospital',
+        division: 'Khulna',
+        country: 'Bangladesh',
+        lat: 22.8456,
+        lng: 89.5403,
+        type: 'Divisional Apex Hospital',
+        icuTotal: 50,
+        icuAvailable: 21, // 42% (Strained)
+        oxygenTankPercent: 54.0,
+        oxygenHoursLeft: 46.0,
+        staffDocs: 20,
+        staffNurses: 46,
+        ventilatorsTotal: 22,
+        ventilatorsFree: 8,
+        ctOperational: '1 / 1',
+        abgOperational: '2 / 2',
+      },
+      {
+        id: 'sbmch',
+        name: 'Sher-e-Bangla Medical College Hospital (SBMCH)',
+        division: 'Barisal',
+        country: 'Bangladesh',
+        lat: 22.6888,
+        lng: 90.3587,
+        type: 'Divisional Apex Hospital',
+        icuTotal: 40,
+        icuAvailable: 15, // 37.5% (Strained)
+        oxygenTankPercent: 48.0,
+        oxygenHoursLeft: 39.0,
+        staffDocs: 18,
+        staffNurses: 40,
+        ventilatorsTotal: 18,
+        ventilatorsFree: 6,
+        ctOperational: '1 / 1',
+        abgOperational: '2 / 2',
+      },
+      {
+        id: 'rpmch',
+        name: 'Rangpur Medical College Hospital',
+        division: 'Rangpur',
+        country: 'Bangladesh',
+        lat: 25.7594,
+        lng: 89.2372,
+        type: 'Divisional Apex Hospital',
+        icuTotal: 50,
+        icuAvailable: 24, // 48% (Strained)
+        oxygenTankPercent: 65.0,
+        oxygenHoursLeft: 54.0,
+        staffDocs: 20,
+        staffNurses: 48,
+        ventilatorsTotal: 20,
+        ventilatorsFree: 9,
+        ctOperational: '1 / 1',
+        abgOperational: '2 / 2',
+      },
+      {
+        id: 'mmch',
+        name: 'Mymensingh Medical College Hospital',
+        division: 'Mymensingh',
+        country: 'Bangladesh',
+        lat: 24.7431,
+        lng: 90.4077,
+        type: 'Divisional Apex Hospital',
+        icuTotal: 55,
+        icuAvailable: 28, // 50.9% (Nominal)
+        oxygenTankPercent: 69.0,
+        oxygenHoursLeft: 58.0,
+        staffDocs: 22,
+        staffNurses: 52,
+        ventilatorsTotal: 22,
+        ventilatorsFree: 10,
+        ctOperational: '2 / 2',
+        abgOperational: '3 / 3',
+      },
+      {
+        id: 'evercare',
+        name: 'Evercare Hospital Dhaka',
+        division: 'Dhaka',
+        country: 'Bangladesh',
+        lat: 23.8118,
+        lng: 90.4312,
+        type: 'Private Tertiary',
+        icuTotal: 55,
+        icuAvailable: 38, // 69.1% (Nominal Surplus)
+        oxygenTankPercent: 91.0,
+        oxygenHoursLeft: 84.0,
+        staffDocs: 30,
+        staffNurses: 70,
+        ventilatorsTotal: 30,
+        ventilatorsFree: 18,
+        ctOperational: '2 / 2',
+        abgOperational: '4 / 4',
+      },
+      {
+        id: 'square',
+        name: 'Square Hospital Dhaka',
+        division: 'Dhaka',
+        country: 'Bangladesh',
+        lat: 23.7533,
+        lng: 90.3814,
+        type: 'Private Tertiary',
+        icuTotal: 50,
+        icuAvailable: 32, // 64% (Nominal Surplus)
+        oxygenTankPercent: 88.0,
+        oxygenHoursLeft: 79.0,
+        staffDocs: 28,
+        staffNurses: 64,
+        ventilatorsTotal: 28,
+        ventilatorsFree: 15,
+        ctOperational: '2 / 2',
+        abgOperational: '4 / 4',
+      },
+      {
+        id: 'united',
+        name: 'United Hospital Gulshan',
+        division: 'Dhaka',
+        country: 'Bangladesh',
+        lat: 23.8058,
+        lng: 90.4158,
+        type: 'Private Tertiary',
+        icuTotal: 48,
+        icuAvailable: 30, // 62.5% (Nominal Surplus)
+        oxygenTankPercent: 85.0,
+        oxygenHoursLeft: 76.0,
+        staffDocs: 26,
+        staffNurses: 60,
+        ventilatorsTotal: 25,
+        ventilatorsFree: 14,
+        ctOperational: '2 / 2',
+        abgOperational: '3 / 3',
+      },
+      // International Strategic Medevac & Referral Hubs
+      {
+        id: 'sgh',
+        name: 'Singapore General Hospital (SGH)',
+        division: 'International',
+        country: 'Singapore',
+        lat: 1.2792,
+        lng: 103.8344,
+        type: 'International Medevac Partner',
+        icuTotal: 180,
+        icuAvailable: 112, // 62.2%
+        oxygenTankPercent: 96.0,
+        oxygenHoursLeft: 140.0,
+        staffDocs: 85,
+        staffNurses: 210,
+        ventilatorsTotal: 90,
+        ventilatorsFree: 54,
+        ctOperational: '6 / 6',
+        abgOperational: '12 / 12',
+      },
+      {
+        id: 'bumrungrad',
+        name: 'Bumrungrad International Hospital',
+        division: 'International',
+        country: 'Thailand',
+        lat: 13.7466,
+        lng: 100.5530,
+        type: 'Emergency Airlift Partner',
+        icuTotal: 110,
+        icuAvailable: 72, // 65.4%
+        oxygenTankPercent: 94.0,
+        oxygenHoursLeft: 120.0,
+        staffDocs: 62,
+        staffNurses: 145,
+        ventilatorsTotal: 60,
+        ventilatorsFree: 38,
+        ctOperational: '4 / 4',
+        abgOperational: '8 / 8',
+      },
+      {
+        id: 'apollo_kolkata',
+        name: 'Apollo Multispeciality Hospitals Kolkata',
+        division: 'International',
+        country: 'India',
+        lat: 22.5697,
+        lng: 88.4022,
+        type: 'Cross-Border Transit Partner',
+        icuTotal: 95,
+        icuAvailable: 58, // 61%
+        oxygenTankPercent: 89.0,
+        oxygenHoursLeft: 96.0,
+        staffDocs: 46,
+        staffNurses: 112,
+        ventilatorsTotal: 50,
+        ventilatorsFree: 29,
+        ctOperational: '3 / 3',
+        abgOperational: '6 / 6',
+      }
+    ];
+
+    // Main App Controller
+    class HealthResourceOptimizer {
+      constructor() {
+        this.facilities = JSON.parse(JSON.stringify(initialFacilities));
+        this.currentView = 'map';
+        this.map = null;
+        this.markerCluster = null;
+        this.markersById = {};
+        this.selectedFacility = this.facilities[0];
+        this.isSimulating = false;
+        this.simInterval = null;
+        this.simTickCount = 0;
+        this.soundEnabled = true;
+        this.audioContext = null;
+        this.mapFilter = 'all';
+
+        // Triage Dispatches & Convoys
+        this.recommendations = [];
+        this.activeConvoys = [
+          {
+            id: 'CV-802',
+            origin: 'Kurmitola General Hospital',
+            dest: 'Dhaka Medical College Hospital',
+            resource: '2,500L Liquid Oxygen Tanker',
+            etaMin: 14,
+            progress: 65,
+            priority: 'P1-CRITICAL',
+          },
+          {
+            id: 'CV-803',
+            origin: 'Evercare Hospital Dhaka',
+            dest: 'NIDCH Mohakhali',
+            resource: '6 Mechanical Ventilators + ICU Nurses',
+            etaMin: 22,
+            progress: 38,
+            priority: 'P2-URGENT',
+          }
+        ];
+
+        // Charts
+        this.icuSurgeChart = null;
+        this.oxygenDepletionChart = null;
+        this.vectorDecompChart = null;
+      }
+
+      init() {
+        this.initLeafletMap();
+        this.renderAll();
+        this.initCharts();
+        this.generateAutomatedRecommendations();
+        this.updateTimeDisplay();
+        setInterval(() => this.updateTimeDisplay(), 1000);
+
+        // Populate Reallocation Modal selects
+        this.populateModalSelects();
+
+        // Initialize icons
+        lucide.createIcons();
+      }
+
+      // Initialize Leaflet Map with OpenStreetMap and Marker Clustering
+      initLeafletMap() {
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) return;
+
+        // Centered over Bangladesh
+        this.map = L.map('map', {
+          zoomControl: true,
+          attributionControl: true
+        }).setView([23.8103, 90.4125], 7);
+
+        // OpenStreetMap tile layer
+        L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
+          maxZoom: 18,
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(this.map);
+
+        // Marker Cluster Group
+        this.markerCluster = L.markerClusterGroup({
+          showCoverageOnHover: false,
+          maxClusterRadius: 35,
+          spiderfyOnMaxZoom: true,
+          zoomToBoundsOnClick: true,
+          iconCreateFunction: (cluster) => {
+            const markers = cluster.getAllChildMarkers();
+            let hasCritical = false;
+            let hasWarning = false;
+
+            markers.forEach(m => {
+              if (m.statusType === 'critical') hasCritical = true;
+              else if (m.statusType === 'warning') hasWarning = true;
+            });
+
+            const colorClass = hasCritical ? 'bg-red-600 text-white animate-pulse' : (hasWarning ? 'bg-amber-500 text-white' : 'bg-sky-600 text-white');
+            return L.divIcon({
+              html: `<div class="${colorClass} w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shadow-md border-2 border-white">${cluster.getChildCount()}</div>`,
+              className: 'custom-cluster-icon',
+              iconSize: L.point(36, 36)
+            });
+          }
+        });
+
+        this.map.addLayer(this.markerCluster);
+        this.updateMapMarkers();
+
+        // Immediately after initializing the map, force Leaflet to recalculate its visible bounds
+        setTimeout(() => {
+          this.map.invalidateSize();
+        }, 300);
+      }
+
+      // Updates or Creates Markers
+      updateMapMarkers() {
+        if (!this.markerCluster) return;
+        this.markerCluster.clearLayers();
+        this.markersById = {};
+
+        this.facilities.forEach(facility => {
+          const icuPercent = (facility.icuAvailable / facility.icuTotal) * 100;
+          const isCritical = icuPercent < 20 || facility.oxygenTankPercent < 20;
+          const isWarning = !isCritical && (icuPercent < 50 || facility.oxygenTankPercent < 50);
+
+          let statusType = 'nominal';
+          if (isCritical) statusType = 'critical';
+          else if (isWarning) statusType = 'warning';
+
+          // Apply current map filter
+          if (this.mapFilter !== 'all') {
+            if (this.mapFilter === 'critical' && statusType !== 'critical') return;
+            if (this.mapFilter === 'strained' && statusType !== 'warning') return;
+            if (this.mapFilter === 'nominal' && statusType !== 'nominal') return;
+          }
+
+          let markerHtml = '';
+          if (statusType === 'critical') {
+            // Visual pulsing radar animation required by prompt
+            markerHtml = `
+              <div class="critical-pin-wrapper">
+                <div class="critical-pin-radar"></div>
+                <div class="critical-pin-radar-delayed"></div>
+                <div class="custom-marker-node node-critical">!</div>
+              </div>
+            `;
+          } else if (statusType === 'warning') {
+            markerHtml = `
+              <div class="critical-pin-wrapper">
+                <div class="custom-marker-node node-warning">&#9650;</div>
+              </div>
+            `;
+          } else {
+            markerHtml = `
+              <div class="critical-pin-wrapper">
+                <div class="custom-marker-node node-nominal">&check;</div>
+              </div>
+            `;
+          }
+
+          const customIcon = L.divIcon({
+            html: markerHtml,
+            className: 'facility-marker-icon',
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+            popupAnchor: [0, -18]
+          });
+
+          const marker = L.marker([facility.lat, facility.lng], { icon: customIcon });
+          marker.statusType = statusType;
+          marker.facilityId = facility.id;
+
+          // Rich Popup
+          const popupContent = `
+            <div class="p-3 w-64 text-slate-800 font-sans">
+              <div class="flex items-center justify-between pb-1 mb-1 border-b border-slate-100">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">${facility.division}</span>
+                <span class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded ${statusType === 'critical' ? 'bg-red-100 text-red-700' : (statusType === 'warning' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}">
+                  ${statusType.toUpperCase()}
+                </span>
+              </div>
+              <h4 class="font-bold text-sm text-slate-900">${facility.name}</h4>
+              <div class="space-y-1.5 mt-2 text-xs">
+                <div class="flex justify-between">
+                  <span class="text-slate-500">ICU Beds Free:</span>
+                  <strong class="font-mono ${icuPercent < 20 ? 'text-red-600 font-bold' : ''}">${facility.icuAvailable}/${facility.icuTotal} (${icuPercent.toFixed(1)}%)</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">Liquid Oxygen:</span>
+                  <strong class="font-mono ${facility.oxygenTankPercent < 20 ? 'text-red-600 font-bold' : ''}">${facility.oxygenTankPercent.toFixed(1)}% (${facility.oxygenHoursLeft.toFixed(1)}h)</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">ICU Staff:</span>
+                  <span class="font-mono">${facility.staffDocs} Docs / ${facility.staffNurses} RNs</span>
+                </div>
+              </div>
+              <button onclick="app.selectFacilityById('${facility.id}')" class="mt-3 w-full py-1 text-center bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded transition-colors cursor-pointer">
+                Inspect Facility Details
+              </button>
+            </div>
+          `;
+
+          marker.bindPopup(popupContent);
+          marker.on('click', () => {
+            this.selectFacilityById(facility.id);
+          });
+
+          this.markerCluster.addLayer(marker);
+          this.markersById[facility.id] = marker;
+        });
+      }
+
+      // Select and inspect a facility
+      selectFacilityById(id) {
+        const found = this.facilities.find(f => f.id === id);
+        if (found) {
+          this.selectedFacility = found;
+          this.updateFacilityInspector();
+        }
+      }
+
+      // Update Inspector Drawer
+      updateFacilityInspector() {
+        const f = this.selectedFacility;
+        if (!f) return;
+
+        const icuPercent = (f.icuAvailable / f.icuTotal) * 100;
+        const isCritical = icuPercent < 20 || f.oxygenTankPercent < 20;
+        const isWarning = !isCritical && (icuPercent < 50 || f.oxygenTankPercent < 50);
+
+        document.getElementById('inspFacilityName').innerText = f.name;
+        document.getElementById('inspTypeTag').innerText = f.type;
+        document.getElementById('inspLocation').innerHTML = `<i data-lucide="map-pin" class="w-3 h-3 text-slate-400"></i> <span>${f.division}, ${f.country}</span>`;
+
+        const badge = document.getElementById('inspStatusBadge');
+        if (isCritical) {
+          badge.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-700';
+          badge.innerText = 'CRITICAL ALERT';
+        } else if (isWarning) {
+          badge.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-700';
+          badge.innerText = 'STRAINED';
+        } else {
+          badge.className = 'text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700';
+          badge.innerText = 'NOMINAL';
+        }
+
+        document.getElementById('inspIcuVal').innerText = `${f.icuAvailable} / ${f.icuTotal} (${icuPercent.toFixed(1)}%)`;
+        const icuBar = document.getElementById('inspIcuBar');
+        icuBar.style.width = `${Math.min(100, Math.max(5, icuPercent))}%`;
+        icuBar.className = icuPercent < 20 ? 'bg-red-500 h-full rounded-full transition-all' : (icuPercent < 50 ? 'bg-amber-500 h-full rounded-full transition-all' : 'bg-emerald-500 h-full rounded-full transition-all');
+
+        document.getElementById('inspOxygenVal').innerText = `${f.oxygenTankPercent.toFixed(1)}% (${f.oxygenHoursLeft.toFixed(1)}h left)`;
+        const oxBar = document.getElementById('inspOxygenBar');
+        oxBar.style.width = `${Math.min(100, Math.max(5, f.oxygenTankPercent))}%`;
+        oxBar.className = f.oxygenTankPercent < 20 ? 'bg-red-500 h-full rounded-full transition-all' : (f.oxygenTankPercent < 50 ? 'bg-amber-500 h-full rounded-full transition-all' : 'bg-teal-500 h-full rounded-full transition-all');
+
+        document.getElementById('inspStaffVal').innerText = `${f.staffDocs} Docs / ${f.staffNurses} Nurses`;
+        document.getElementById('inspVentVal').innerText = `${f.ventilatorsFree} Free / ${f.ventilatorsTotal} Total`;
+        document.getElementById('inspCtStatus').innerText = `Operational (${f.ctOperational})`;
+        document.getElementById('inspAbgStatus').innerText = `Online (${f.abgOperational})`;
+
+        const dispatchBtn = document.getElementById('inspDispatchBtn');
+        if (isCritical) {
+          dispatchBtn.className = 'w-full py-2 px-3 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer animate-pulse';
+          dispatchBtn.innerHTML = `<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> <span>Authorize Emergency Reallocation</span>`;
+        } else {
+          dispatchBtn.className = 'w-full py-2 px-3 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer';
+          dispatchBtn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5"></i> <span>Queue Emergency Supply Requisition</span>`;
+        }
+
+        lucide.createIcons();
+      }
+
+      // Fly to location helper
+      flyToLocation(coords, zoom) {
+        if (this.map) {
+          this.map.flyTo(coords, zoom, { duration: 1.2 });
+        }
+      }
+
+      setMapFilter(filter) {
+        this.mapFilter = filter;
+        ['all', 'critical', 'strained', 'nominal'].forEach(k => {
+          const btn = document.getElementById(`map-filter-${k}`);
+          if (btn) {
+            if (k === filter) {
+              btn.className = 'px-2.5 py-1 text-xs font-semibold rounded bg-white text-slate-900 shadow-xs';
+            } else {
+              btn.className = 'px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:text-slate-900';
+            }
+          }
+        });
+        this.updateMapMarkers();
+      }
+
+      // Render All Views and Data Elements
+      renderAll() {
+        this.renderInventoryTable();
+        this.updateFacilityInspector();
+        this.updateKPISummaries();
+        this.updateTopAlertBanner();
+        this.renderDispatchesAndConvoys();
+      }
+
+      // Render Resource Inventory High-Density Data Grid
+      renderInventoryTable() {
+        const tbody = document.getElementById('inventoryTableBody');
+        if (!tbody) return;
+
+        const searchVal = (document.getElementById('inventorySearchInput')?.value || '').toLowerCase().trim();
+        const regionFilter = document.getElementById('inventoryRegionFilter')?.value || 'all';
+
+        const filtered = this.facilities.filter(f => {
+          const matchSearch = f.name.toLowerCase().includes(searchVal) || f.division.toLowerCase().includes(searchVal) || f.country.toLowerCase().includes(searchVal);
+          const matchRegion = regionFilter === 'all' || f.division === regionFilter;
+          return matchSearch && matchRegion;
+        });
+
+        document.getElementById('inventoryRowCount').innerText = `Showing ${filtered.length} of ${this.facilities.length} monitored facilities`;
+
+        tbody.innerHTML = filtered.map(f => {
+          const icuPct = (f.icuAvailable / f.icuTotal) * 100;
+          const isCritical = icuPct < 20 || f.oxygenTankPercent < 20;
+          const isWarning = !isCritical && (icuPct < 50 || f.oxygenTankPercent < 50);
+
+          let statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700">Nominal</span>`;
+          if (isCritical) {
+            statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-red-100 text-red-700 animate-pulse">Critical (&lt;20%)</span>`;
+          } else if (isWarning) {
+            statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700">Strained</span>`;
+          }
+
+          const icuColor = icuPct < 20 ? 'bg-red-500' : (icuPct < 50 ? 'bg-amber-500' : 'bg-sky-500');
+          const oxColor = f.oxygenTankPercent < 20 ? 'bg-red-500' : (f.oxygenTankPercent < 50 ? 'bg-amber-500' : 'bg-teal-500');
+
+          return `
+            <tr class="hover:bg-slate-50/80 transition-colors ${isCritical ? 'bg-red-50/30' : ''}">
+              <td class="py-3 px-4 font-medium text-slate-900">
+                <div class="font-bold text-slate-800">${f.name}</div>
+                <div class="text-[11px] text-slate-500">${f.type}</div>
+              </td>
+              <td class="py-3 px-4 text-slate-600 font-medium">
+                ${f.division}, ${f.country}
+              </td>
+              <td class="py-3 px-4">
+                <div class="flex items-center justify-between text-[11px] mb-1">
+                  <span class="font-bold ${icuPct < 20 ? 'text-red-600' : 'text-slate-800'}">${f.icuAvailable}/${f.icuTotal}</span>
+                  <span class="text-slate-500">${icuPct.toFixed(1)}%</span>
+                </div>
+                <div class="w-28 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                  <div class="${icuColor} h-full rounded-full" style="width: ${Math.min(100, Math.max(4, icuPct))}%"></div>
+                </div>
+              </td>
+              <td class="py-3 px-4">
+                <div class="flex items-center justify-between text-[11px] mb-1">
+                  <span class="font-bold ${f.oxygenTankPercent < 20 ? 'text-red-600' : 'text-slate-800'}">${f.oxygenTankPercent.toFixed(1)}%</span>
+                  <span class="text-slate-400 font-mono text-[10px]">${f.oxygenHoursLeft.toFixed(1)}h left</span>
+                </div>
+                <div class="w-28 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                  <div class="${oxColor} h-full rounded-full" style="width: ${Math.min(100, Math.max(4, f.oxygenTankPercent))}%"></div>
+                </div>
+              </td>
+              <td class="py-3 px-4 text-slate-700">
+                <span class="font-semibold">${f.staffDocs} Docs</span> / <span class="text-slate-500">${f.staffNurses} RNs</span>
+              </td>
+              <td class="py-3 px-4 text-slate-700">
+                <span class="font-semibold ${f.ventilatorsFree <= 2 ? 'text-red-600 font-bold' : ''}">${f.ventilatorsFree} Free</span> / ${f.ventilatorsTotal}
+              </td>
+              <td class="py-3 px-4">
+                ${statusBadge}
+              </td>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <div class="flex items-center justify-end gap-1.5">
+                  <button onclick="app.quickTransferTo('${f.id}')" class="px-2 py-1 text-[11px] font-semibold bg-sky-50 text-sky-700 hover:bg-sky-100 rounded transition-colors" title="Emergency Reallocate">
+                    Transfer
+                  </button>
+                  <button onclick="app.inspectAndSwitchToMap('${f.id}')" class="px-2 py-1 text-[11px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded transition-colors" title="Locate on Command Map">
+                    Map
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Update National KPI Summaries in Sidebar
+      updateKPISummaries() {
+        let totalIcu = 0;
+        let totalAvailable = 0;
+        let totalOxPercent = 0;
+        let totalDocs = 0;
+        let criticalCount = 0;
+
+        this.facilities.forEach(f => {
+          totalIcu += f.icuTotal;
+          totalAvailable += f.icuAvailable;
+          totalOxPercent += f.oxygenTankPercent;
+          totalDocs += f.staffDocs;
+          if ((f.icuAvailable / f.icuTotal) * 100 < 20 || f.oxygenTankPercent < 20) {
+            criticalCount++;
+          }
+        });
+
+        const avgIcu = (totalAvailable / totalIcu) * 100;
+        const avgOx = totalOxPercent / this.facilities.length;
+
+        document.getElementById('kpiAvgIcu').innerText = `${avgIcu.toFixed(1)}% (${totalAvailable} free)`;
+        document.getElementById('kpiAvgIcuBar').style.width = `${avgIcu.toFixed(1)}%`;
+
+        document.getElementById('kpiOxygenLevel').innerText = `${avgOx.toFixed(1)}%`;
+        document.getElementById('kpiOxygenBar').style.width = `${avgOx.toFixed(1)}%`;
+
+        document.getElementById('kpiStaffOnDuty').innerText = `${totalDocs} Doctors on duty`;
+
+        const sideCriticalTag = document.getElementById('sideCriticalCount');
+        if (sideCriticalTag) {
+          sideCriticalTag.innerText = `${criticalCount} critical`;
+          sideCriticalTag.className = criticalCount > 0 ? 'text-xs font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded animate-pulse' : 'text-xs font-mono font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded';
+        }
+      }
+
+      // Dynamic Top Alert Banner
+      updateTopAlertBanner() {
+        const criticalFacilities = this.facilities.filter(f => {
+          return (f.icuAvailable / f.icuTotal) * 100 < 20 || f.oxygenTankPercent < 20;
+        });
+
+        const banner = document.getElementById('topAlertBanner');
+        const badge = document.getElementById('alertCountBadge');
+        const text = document.getElementById('alertBannerText');
+        const filterBtn = document.getElementById('viewAlertSourceBtn');
+
+        if (criticalFacilities.length > 0) {
+          banner.className = 'bg-red-600 text-white transition-all duration-300 relative border-b border-red-700 shadow-sm';
+          badge.className = 'bg-red-800 text-white px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase shrink-0 animate-pulse';
+          badge.innerText = `${criticalFacilities.length} Critical Alerts`;
+          
+          const names = criticalFacilities.map(f => f.name.replace(' Hospital', '')).join(', ');
+          text.innerText = `Severe Resource Deficit (<20%): ${names}. Automated triage conduits primed.`;
+          filterBtn.classList.remove('hidden');
+        } else {
+          banner.className = 'bg-slate-900 text-slate-200 transition-all duration-300 relative border-b border-slate-800';
+          badge.className = 'bg-emerald-600 text-white px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase shrink-0';
+          badge.innerText = 'All Clear';
+          text.innerText = 'National health grid nominal. 18 regional hubs operating within standard resource thresholds.';
+          filterBtn.classList.add('hidden');
+        }
+      }
+
+      toggleAlertBanner() {
+        const banner = document.getElementById('topAlertBanner');
+        banner.classList.toggle('hidden');
+      }
+
+      showCriticalFacilities() {
+        this.switchView('inventory');
+        const searchInput = document.getElementById('inventorySearchInput');
+        if (searchInput) {
+          searchInput.value = '';
+        }
+        // filter table to show critical
+        const tbody = document.getElementById('inventoryTableBody');
+        const critical = this.facilities.filter(f => (f.icuAvailable / f.icuTotal) * 100 < 20 || f.oxygenTankPercent < 20);
+        if (critical.length > 0) {
+          this.showToast(`Filtered to ${critical.length} critical facilities.`, 'warning');
+        }
+      }
+
+      // Switch View Handler
+      switchView(viewName) {
+        this.currentView = viewName;
+
+        // Hide all view panels
+        document.querySelectorAll('.view-panel').forEach(panel => {
+          panel.classList.add('hidden');
+          panel.classList.remove('flex');
+        });
+
+        // Show target panel
+        const target = document.getElementById(`view-${viewName}`);
+        if (target) {
+          target.classList.remove('hidden');
+          target.classList.add('flex');
+        }
+
+        // Update Top Navigation Underline Tabs
+        ['map', 'inventory', 'predictor', 'dispatch'].forEach(v => {
+          const navBtn = document.getElementById(`nav-${v}`);
+          const sideBtn = document.getElementById(`side-nav-${v}`);
+
+          if (v === viewName) {
+            if (navBtn) {
+              navBtn.className = 'nav-item text-sky-700 font-semibold border-b-2 border-sky-600 transition-colors whitespace-nowrap py-1';
+            }
+            if (sideBtn) {
+              sideBtn.className = 'side-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold bg-sky-50 text-sky-700 transition-colors';
+            }
+          } else {
+            if (navBtn) {
+              navBtn.className = 'nav-item text-slate-600 hover:text-sky-700 border-b-2 border-transparent transition-colors whitespace-nowrap py-1';
+            }
+            if (sideBtn) {
+              sideBtn.className = 'side-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors';
+            }
+          }
+        });
+
+        // Re-adjust map sizing if switched to map
+        if (viewName === 'map' && this.map) {
+          this.map.invalidateSize();
+          setTimeout(() => {
+            this.map.invalidateSize();
+          }, 300);
+        }
+
+        // Resize charts if switched to predictor
+        if (viewName === 'predictor') {
+          setTimeout(() => {
+            if (this.icuSurgeChart) this.icuSurgeChart.resize();
+            if (this.oxygenDepletionChart) this.oxygenDepletionChart.resize();
+            if (this.vectorDecompChart) this.vectorDecompChart.resize();
+          }, 100);
+        }
+
+        lucide.createIcons();
+      }
+
+      inspectAndSwitchToMap(facilityId) {
+        this.selectFacilityById(facilityId);
+        this.switchView('map');
+        const f = this.selectedFacility;
+        if (f) {
+          this.flyToLocation([f.lat, f.lng], 13);
+          const marker = this.markersById[f.id];
+          if (marker) {
+            setTimeout(() => {
+              marker.openPopup();
+            }, 500);
+          }
+        }
+      }
+
+      // Real-Time Monitoring Simulation
+      toggleSimulation() {
+        this.isSimulating = !this.isSimulating;
+        const btn = document.getElementById('simToggleBtn');
+        const icon = document.getElementById('simIcon');
+        const text = document.getElementById('simBtnText');
+
+        if (this.isSimulating) {
+          btn.className = 'px-3.5 py-2 text-xs sm:text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all shadow-sm flex items-center gap-2 whitespace-nowrap cursor-pointer animate-pulse';
+          icon.setAttribute('data-lucide', 'square');
+          text.innerText = 'Monitoring Active (3s)';
+
+          this.showToast('Real-time telemetry stream started. Updating every 3s.', 'success');
+
+          this.simInterval = setInterval(() => {
+            this.executeSimulationTick();
+          }, 3000);
+        } else {
+          clearInterval(this.simInterval);
+          this.simInterval = null;
+          btn.className = 'px-3.5 py-2 text-xs sm:text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-all shadow-sm flex items-center gap-2 whitespace-nowrap cursor-pointer';
+          icon.setAttribute('data-lucide', 'play');
+          text.innerText = 'Start Real-Time Monitoring';
+          this.showToast('Real-time telemetry stream paused.', 'info');
+        }
+
+        lucide.createIcons();
+      }
+
+      // Execute Simulation Tick (Dynamic randomized updates every 3 seconds)
+      executeSimulationTick() {
+        this.simTickCount++;
+        let newlyCriticalCount = 0;
+
+        // Apply realistic dynamic shifts
+        this.facilities.forEach(f => {
+          // randomized bed delta: -2 to +1
+          const deltaBeds = Math.floor(Math.random() * 4) - 2;
+          const oldAvailable = f.icuAvailable;
+          f.icuAvailable = Math.max(2, Math.min(f.icuTotal, f.icuAvailable + deltaBeds));
+
+          // randomized oxygen burn: -1.8% to +0.8%
+          const deltaOx = (Math.random() * 2.8) - 1.6;
+          f.oxygenTankPercent = Math.max(8.0, Math.min(99.0, f.oxygenTankPercent + deltaOx));
+          f.oxygenHoursLeft = (f.oxygenTankPercent / 100) * 80;
+
+          // Check if crossed into critical < 20%
+          const prevPct = (oldAvailable / f.icuTotal) * 100;
+          const newPct = (f.icuAvailable / f.icuTotal) * 100;
+          if (newPct < 20 && prevPct >= 20) {
+            newlyCriticalCount++;
+          }
+        });
+
+        // Advance active convoys progress
+        this.activeConvoys.forEach(c => {
+          if (c.progress < 100) {
+            c.progress = Math.min(100, c.progress + 12);
+            c.etaMin = Math.max(1, Math.round(c.etaMin * (1 - (c.progress / 100))));
+          }
+        });
+
+        // Trigger visual pulsing and sound alert if resources drop < 20%
+        if (newlyCriticalCount > 0) {
+          this.playAlertChime();
+          this.showToast(`CRITICAL WARNING: ${newlyCriticalCount} hospital(s) breached safe operating reserve (<20%)!`, 'error');
+        }
+
+        // Re-generate triage dispatch options automatically
+        this.generateAutomatedRecommendations();
+
+        // Re-render UI views immediately
+        this.updateMapMarkers();
+        this.renderAll();
+      }
+
+      // Audio alert chime using synthesized Web Audio API
+      playAlertChime() {
+        if (!this.soundEnabled) return;
+        try {
+          if (!this.audioContext) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.audioContext = new AudioCtx();
+          }
+
+          const ctx = this.audioContext;
+          if (ctx.state === 'suspended') {
+            ctx.resume();
+          }
+
+          // Two-tone warning chime
+          const now = ctx.currentTime;
+          const osc1 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(880, now);
+          osc1.frequency.exponentialRampToValueAtTime(587.33, now + 0.18);
+          gain1.gain.setValueAtTime(0.15, now);
+          gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+          osc1.connect(gain1);
+          gain1.connect(ctx.destination);
+          osc1.start(now);
+          osc1.stop(now + 0.35);
+
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = 'triangle';
+          osc2.frequency.setValueAtTime(1174.66, now + 0.12);
+          osc2.frequency.exponentialRampToValueAtTime(880, now + 0.32);
+          gain2.gain.setValueAtTime(0.12, now + 0.12);
+          gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.start(now + 0.12);
+          osc2.stop(now + 0.45);
+        } catch (e) {
+          console.warn('Audio chime disabled or blocked by browser policy:', e);
+        }
+      }
+
+      toggleSound() {
+        this.soundEnabled = !this.soundEnabled;
+        const icon = document.getElementById('soundIcon');
+        if (this.soundEnabled) {
+          icon.setAttribute('data-lucide', 'volume-2');
+          this.showToast('Audio warning chimes enabled.', 'info');
+          this.playAlertChime();
+        } else {
+          icon.setAttribute('data-lucide', 'volume-x');
+          this.showToast('Audio alerts muted.', 'info');
+        }
+        lucide.createIcons();
+      }
+
+      // Fast Stress Test: Drops a facility into critical status < 20%
+      triggerSurgeEvent(region) {
+        if (region === 'dhaka') {
+          const dmch = this.facilities.find(f => f.id === 'dmch');
+          if (dmch) {
+            dmch.icuAvailable = 11; // 9.1%
+            dmch.oxygenTankPercent = 14.5;
+            dmch.oxygenHoursLeft = 8.5;
+          }
+          const nidch = this.facilities.find(f => f.id === 'nidch');
+          if (nidch) {
+            nidch.icuAvailable = 4; // 8%
+            nidch.oxygenTankPercent = 12.0;
+          }
+          this.playAlertChime();
+          this.showToast('SIMULATED EMERGENCY: Dhaka Medical & NIDCH dropped to Critical (<15%)!', 'error');
+        } else if (region === 'chittagong') {
+          const cmch = this.facilities.find(f => f.id === 'cmch');
+          if (cmch) {
+            cmch.icuAvailable = 8; // 10%
+            cmch.oxygenTankPercent = 16.0;
+            cmch.oxygenHoursLeft = 9.8;
+          }
+          this.playAlertChime();
+          this.showToast('SIMULATED STRAIN: Chittagong Medical capacity compromised (<16%)!', 'warning');
+        }
+
+        this.generateAutomatedRecommendations();
+        this.updateMapMarkers();
+        this.renderAll();
+      }
+
+      resetData() {
+        this.facilities = JSON.parse(JSON.stringify(initialFacilities));
+        this.selectedFacility = this.facilities[0];
+        this.generateAutomatedRecommendations();
+        this.updateMapMarkers();
+        this.renderAll();
+        this.showToast('All facility resource baselines restored.', 'info');
+      }
+
+      // Automated Triage & Dispatch Engine
+      generateAutomatedRecommendations() {
+        const recs = [];
+        const criticals = this.facilities.filter(f => (f.icuAvailable / f.icuTotal) * 100 < 20 || f.oxygenTankPercent < 20);
+        const surpluses = this.facilities.filter(f => (f.icuAvailable / f.icuTotal) * 100 > 55 && f.oxygenTankPercent > 65);
+
+        criticals.forEach(crit => {
+          // Find closest surplus facility
+          let nearest = surpluses[0] || this.facilities.find(f => f.id === 'kurmitola') || this.facilities[2];
+          let minDist = 999999;
+
+          surpluses.forEach(sur => {
+            const dist = Math.hypot(sur.lat - crit.lat, sur.lng - crit.lng);
+            if (dist < minDist) {
+              minDist = dist;
+              nearest = sur;
+            }
+          });
+
+          if (nearest && nearest.id !== crit.id) {
+            const icuDeficit = crit.icuAvailable < 20;
+            const oxDeficit = crit.oxygenTankPercent < 20;
+
+            recs.push({
+              id: `REC-${crit.id.toUpperCase()}-${Math.floor(Math.random() * 899 + 100)}`,
+              priority: 'P1-CRITICAL',
+              targetFacility: crit.name,
+              targetId: crit.id,
+              sourceFacility: nearest.name,
+              sourceId: nearest.id,
+              actionType: oxDeficit ? 'Liquid Oxygen Relief Tanker' : 'Emergency ICU Patient Divert & Ventilators',
+              quantity: oxDeficit ? '3,000L Liquid Oxygen' : '10 Transport Ventilators + 4 ICU Nurses',
+              routeInfo: `Express Corridor: ~${Math.round(minDist * 110 + 8)} km (${Math.round(minDist * 60 + 15)} min Transit ETA)`,
+            });
+          }
+        });
+
+        this.recommendations = recs;
+        this.renderDispatchesAndConvoys();
+
+        const countTag = document.getElementById('dispatchCountTag');
+        const sideBadge = document.getElementById('sideDispatchBadge');
+        if (countTag) countTag.innerText = `${recs.length} recommended`;
+        if (sideBadge) sideBadge.innerText = `${recs.length}`;
+      }
+
+      renderDispatchesAndConvoys() {
+        const list = document.getElementById('transferRequisitionList');
+        if (list) {
+          if (this.recommendations.length === 0) {
+            list.innerHTML = `
+              <div class="bg-white p-6 rounded-xl border border-slate-200 text-center text-slate-500">
+                <i data-lucide="check-circle-2" class="w-8 h-8 text-emerald-500 mx-auto mb-2"></i>
+                <div class="font-bold text-slate-800 text-sm">No Urgent Triage Deficits Detected</div>
+                <div class="text-xs text-slate-400 mt-1">All facilities operating above the 20% critical threshold.</div>
+              </div>
+            `;
+          } else {
+            list.innerHTML = this.recommendations.map(r => `
+              <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-red-100 text-red-700">${r.priority}</span>
+                    <span class="text-xs font-mono text-slate-400">${r.id}</span>
+                  </div>
+                  <span class="text-xs font-semibold text-slate-600">${r.routeInfo}</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                  <div class="bg-red-50/60 p-2.5 rounded-lg border border-red-100">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-red-600 block">Recipient (Deficit Critical)</span>
+                    <span class="font-bold text-slate-900">${r.targetFacility}</span>
+                  </div>
+                  <div class="bg-emerald-50/60 p-2.5 rounded-lg border border-emerald-100">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-700 block">Surplus Donor Facility</span>
+                    <span class="font-bold text-slate-900">${r.sourceFacility}</span>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-lg border border-slate-100">
+                  <span class="text-slate-600">Reallocated Asset: <strong class="text-slate-800 font-semibold">${r.quantity}</strong></span>
+                  <span class="text-sky-700 font-medium">${r.actionType}</span>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-1">
+                  <button onclick="app.dismissRecommendation('${r.id}')" class="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                    Dismiss
+                  </button>
+                  <button onclick="app.authorizeTransfer('${r.id}')" class="px-3.5 py-1.5 text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer">
+                    <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                    <span>Authorize & Dispatch Convoy</span>
+                  </button>
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+
+        // Active convoys
+        const convoyEl = document.getElementById('activeConvoysList');
+        if (convoyEl) {
+          convoyEl.innerHTML = this.activeConvoys.map(c => `
+            <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="font-mono font-bold text-slate-800 text-[11px]">${c.id}</span>
+                <span class="font-mono font-semibold text-sky-700 text-[11px]">${c.progress >= 100 ? 'ARRIVED & DISPATCHED' : `ETA: ~${c.etaMin}m`}</span>
+              </div>
+              <div class="text-[11px] font-semibold text-slate-800">${c.resource}</div>
+              <div class="text-[10px] text-slate-500 flex items-center gap-1">
+                <span class="truncate">${c.origin.replace(' Hospital', '')}</span>
+                <span>&rarr;</span>
+                <span class="truncate">${c.dest.replace(' Hospital', '')}</span>
+              </div>
+              <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                <div class="bg-sky-600 h-full rounded-full transition-all duration-300" style="width: ${c.progress}%"></div>
+              </div>
+            </div>
+          `).join('');
+
+          const transitBadge = document.getElementById('activeTransitCount');
+          if (transitBadge) {
+            transitBadge.innerText = `${this.activeConvoys.length} En-Route`;
+          }
+        }
+
+        lucide.createIcons();
+      }
+
+      authorizeTransfer(recId) {
+        const rec = this.recommendations.find(r => r.id === recId);
+        if (!rec) return;
+
+        // Add to active convoys
+        this.activeConvoys.unshift({
+          id: `CV-${Math.floor(Math.random() * 899 + 100)}`,
+          origin: rec.sourceFacility,
+          dest: rec.targetFacility,
+          resource: rec.quantity,
+          etaMin: 18,
+          progress: 5,
+          priority: rec.priority
+        });
+
+        // Boost target facility capacity slightly
+        const target = this.facilities.find(f => f.id === rec.targetId);
+        if (target) {
+          target.icuAvailable = Math.min(target.icuTotal, target.icuAvailable + 8);
+          target.oxygenTankPercent = Math.min(95, target.oxygenTankPercent + 15);
+          target.oxygenHoursLeft = (target.oxygenTankPercent / 100) * 80;
+        }
+
+        // Remove from recommendations
+        this.recommendations = this.recommendations.filter(r => r.id !== recId);
+
+        this.showToast(`Transfer authorized! Emergency convoy en route to ${rec.targetFacility}.`, 'success');
+        this.updateMapMarkers();
+        this.renderAll();
+      }
+
+      dismissRecommendation(recId) {
+        this.recommendations = this.recommendations.filter(r => r.id !== recId);
+        this.renderDispatchesAndConvoys();
+      }
+
+      dispatchToSelectedFacility() {
+        if (!this.selectedFacility) return;
+        this.quickTransferTo(this.selectedFacility.id);
+      }
+
+      quickTransferTo(facilityId) {
+        const dest = this.facilities.find(f => f.id === facilityId);
+        if (!dest) return;
+
+        document.getElementById('modalDestSelect').value = dest.id;
+        this.openReallocateModal();
+      }
+
+      populateModalSelects() {
+        const srcSelect = document.getElementById('modalSourceSelect');
+        const destSelect = document.getElementById('modalDestSelect');
+        if (!srcSelect || !destSelect) return;
+
+        const optionsHtml = this.facilities.map(f => {
+          const icuPct = ((f.icuAvailable / f.icuTotal) * 100).toFixed(0);
+          return `<option value="${f.id}">${f.name} (${f.division}) - Free ICU: ${f.icuAvailable} (${icuPct}%) | O2: ${f.oxygenTankPercent.toFixed(0)}%</option>`;
+        }).join('');
+
+        srcSelect.innerHTML = optionsHtml;
+        destSelect.innerHTML = optionsHtml;
+
+        // Default source to Kurmitola (surplus) and dest to DMCH (deficit)
+        srcSelect.value = 'kurmitola';
+        destSelect.value = 'dmch';
+      }
+
+      openReallocateModal() {
+        document.getElementById('reallocateModal').classList.remove('hidden');
+      }
+
+      closeReallocateModal() {
+        document.getElementById('reallocateModal').classList.add('hidden');
+      }
+
+      executeManualReallocation() {
+        const srcId = document.getElementById('modalSourceSelect').value;
+        const destId = document.getElementById('modalDestSelect').value;
+        const commodity = document.getElementById('modalCommoditySelect').value;
+        const qty = parseInt(document.getElementById('modalQuantityInput').value, 10) || 500;
+
+        if (srcId === destId) {
+          this.showToast('Source and Destination facilities cannot be the same.', 'error');
+          return;
+        }
+
+        const src = this.facilities.find(f => f.id === srcId);
+        const dest = this.facilities.find(f => f.id === destId);
+
+        if (commodity === 'oxygen') {
+          dest.oxygenTankPercent = Math.min(100, dest.oxygenTankPercent + 20);
+          dest.oxygenHoursLeft = (dest.oxygenTankPercent / 100) * 80;
+        } else if (commodity === 'icu') {
+          dest.icuAvailable = Math.min(dest.icuTotal, dest.icuAvailable + 6);
+        } else {
+          dest.staffNurses += 4;
+        }
+
+        this.activeConvoys.unshift({
+          id: `MAN-${Math.floor(Math.random() * 899 + 100)}`,
+          origin: src.name,
+          dest: dest.name,
+          resource: `${qty} units of ${commodity.toUpperCase()}`,
+          etaMin: 25,
+          progress: 8,
+          priority: 'P2-TRANSFER'
+        });
+
+        this.closeReallocateModal();
+        this.showToast(`Transfer order confirmed: Dispatched from ${src.name} to ${dest.name}!`, 'success');
+        this.updateMapMarkers();
+        this.renderAll();
+      }
+
+      requestInternationalAirlift() {
+        this.showToast('Request transmitted to Singapore SGH & Bangkok Bumrungrad Medevac Operation Centers. Air clearance granted.', 'success');
+      }
+
+      exportInventoryCsv() {
+        let csv = 'Facility,Division,Country,ICU_Total,ICU_Available,ICU_Percent,Oxygen_Percent,Oxygen_Hours_Left,Staff_Doctors,Staff_Nurses,Ventilators_Free\n';
+        this.facilities.forEach(f => {
+          const icuPct = ((f.icuAvailable / f.icuTotal) * 100).toFixed(1);
+          csv += `"${f.name}","${f.division}","${f.country}",${f.icuTotal},${f.icuAvailable},${icuPct},${f.oxygenTankPercent.toFixed(1)},${f.oxygenHoursLeft.toFixed(1)},${f.staffDocs},${f.staffNurses},${f.ventilatorsFree}\n`;
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.setAttribute('href', url);
+        a.setAttribute('download', `National_Health_Resource_Optimizer_${Date.now()}.csv`);
+        a.click();
+        this.showToast('Inventory dataset exported as CSV.', 'success');
+      }
+
+      // Initialize Chart.js Graphs for AI Predictor & Forecaster
+      initCharts() {
+        // Chart 1: 72h ICU Demand Surge Forecast
+        const ctx1 = document.getElementById('icuSurgeChart');
+        if (ctx1) {
+          const hours = ['Now', '+6h', '+12h', '+18h', '+24h', '+30h', '+36h', '+42h', '+48h', '+54h', '+60h', '+66h', '+72h'];
+          this.icuSurgeChart = new Chart(ctx1, {
+            type: 'line',
+            data: {
+              labels: hours,
+              datasets: [
+                {
+                  label: 'Projected ICU Demand (Beds Required)',
+                  data: [610, 635, 665, 710, 770, 840, 890, 860, 810, 760, 720, 680, 640],
+                  borderColor: '#ef4444',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  fill: true,
+                  tension: 0.35,
+                  pointRadius: 4,
+                  borderWidth: 2.5
+                },
+                {
+                  label: 'Available ICU Bed Ceiling',
+                  data: Array(13).fill(740),
+                  borderColor: '#94a3b8',
+                  borderDash: [5, 5],
+                  pointRadius: 0,
+                  borderWidth: 2,
+                  fill: false
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: 'top',
+                  labels: {
+                    boxWidth: 12,
+                    font: { size: 11, family: 'Plus Jakarta Sans' }
+                  }
+                }
+              },
+              scales: {
+                y: {
+                  grid: { color: '#f1f5f9' },
+                  ticks: { font: { size: 11, family: 'JetBrains Mono' } }
+                },
+                x: {
+                  grid: { display: false },
+                  ticks: { font: { size: 10, family: 'JetBrains Mono' } }
+                }
+              }
+            }
+          });
+        }
+
+        // Chart 2: Regional Oxygen Depletion Timeline
+        const ctx2 = document.getElementById('oxygenDepletionChart');
+        if (ctx2) {
+          this.oxygenDepletionChart = new Chart(ctx2, {
+            type: 'bar',
+            data: {
+              labels: ['Dhaka Metro', 'Chittagong', 'Sylhet', 'Rajshahi', 'Khulna', 'Barisal', 'Rangpur'],
+              datasets: [
+                {
+                  label: 'Hours of LMO Remaining',
+                  data: [13.5, 12.0, 56.4, 62.0, 46.0, 39.0, 54.0],
+                  backgroundColor: [
+                    '#ef4444',
+                    '#ef4444',
+                    '#10b981',
+                    '#10b981',
+                    '#f59e0b',
+                    '#f59e0b',
+                    '#10b981'
+                  ],
+                  borderRadius: 6
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false }
+              },
+              scales: {
+                y: {
+                  title: { display: true, text: 'Hours Remaining', font: { size: 10 } },
+                  grid: { color: '#f1f5f9' },
+                  ticks: { font: { size: 11, family: 'JetBrains Mono' } }
+                },
+                x: {
+                  grid: { display: false },
+                  ticks: { font: { size: 10, family: 'Plus Jakarta Sans' } }
+                }
+              }
+            }
+          });
+        }
+
+        // Chart 3: Disease / Epidemic Vector Decomposition
+        const ctx3 = document.getElementById('vectorDecompChart');
+        if (ctx3) {
+          this.vectorDecompChart = new Chart(ctx3, {
+            type: 'bar',
+            data: {
+              labels: ['Dhaka DMCH', 'BSMMU', 'Chittagong CMCH', 'Sylhet Osmani', 'Rajshahi RMCH', 'Khulna KMCH'],
+              datasets: [
+                {
+                  label: 'Dengue Shock Syndrome',
+                  data: [45, 38, 48, 20, 18, 22],
+                  backgroundColor: '#0284c7'
+                },
+                {
+                  label: 'Acute Respiratory (ARDS/Pulmonary)',
+                  data: [35, 28, 30, 24, 25, 20],
+                  backgroundColor: '#0d9488'
+                },
+                {
+                  label: 'Cardiovascular & Emergency Trauma',
+                  data: [20, 24, 18, 16, 22, 18],
+                  backgroundColor: '#f59e0b'
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: { stacked: true, grid: { display: false } },
+                y: { stacked: true, grid: { color: '#f1f5f9' } }
+              },
+              plugins: {
+                legend: {
+                  position: 'top',
+                  labels: { boxWidth: 12, font: { size: 11 } }
+                }
+              }
+            }
+          });
+        }
+      }
+
+      updateForecastScenario(val) {
+        document.getElementById('surgeFactorLabel').innerText = `+${val}%`;
+      }
+
+      recalculateAIPredictions() {
+        const factor = parseInt(document.getElementById('surgeFactorSlider').value, 10) || 35;
+        const multiplier = 1 + (factor / 100);
+
+        if (this.icuSurgeChart) {
+          const baseDemand = [610, 635, 665, 710, 770, 840, 890, 860, 810, 760, 720, 680, 640];
+          this.icuSurgeChart.data.datasets[0].data = baseDemand.map(v => Math.round(v * multiplier));
+          this.icuSurgeChart.update();
+        }
+
+        if (this.oxygenDepletionChart) {
+          const baseRunRates = [13.5, 12.0, 56.4, 62.0, 46.0, 39.0, 54.0];
+          this.oxygenDepletionChart.data.datasets[0].data = baseRunRates.map(v => Math.max(4, Math.round(v / multiplier)));
+          this.oxygenDepletionChart.update();
+        }
+
+        this.showToast(`AI Projections recalculated for +${factor}% surge outbreak condition.`, 'success');
+      }
+
+      // Live UTC & BST clock
+      updateTimeDisplay() {
+        const timeEl = document.getElementById('telemetryTimestamp');
+        if (timeEl) {
+          const now = new Date();
+          const bstStr = now.toLocaleTimeString('en-US', { hour12: false });
+          timeEl.innerText = `${bstStr} BST`;
+        }
+      }
+
+      // Toast notification helper
+      showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        const bgClass = type === 'error' ? 'bg-red-600 text-white' : (type === 'warning' ? 'bg-amber-500 text-white' : (type === 'success' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-white'));
+        
+        toast.className = `${bgClass} text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg border border-white/20 transition-all duration-300 transform translate-y-2 opacity-0 flex items-center gap-2 max-w-sm pointer-events-auto`;
+        toast.innerHTML = `
+          <span>${message}</span>
+        `;
+
+        container.appendChild(toast);
+        requestAnimationFrame(() => {
+          toast.classList.remove('translate-y-2', 'opacity-0');
+        });
+
+        setTimeout(() => {
+          toast.classList.add('opacity-0', 'translate-y-2');
+          setTimeout(() => toast.remove(), 300);
+        }, 4000);
+      }
+    }
+
+    // Launch Application
+    let app = null;
+    window.addEventListener('DOMContentLoaded', () => {
+      app = new HealthResourceOptimizer();
+      window.app = app;
+      app.init();
+    });
+  </script>
+</body>
+</html>
